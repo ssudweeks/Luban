@@ -4,10 +4,10 @@ import { NumberInput } from '../../components/Input';
 import i18n from '../../lib/i18n';
 import styles from './index.styl';
 
-class Cnccom extends PureComponent {
+class CNC extends PureComponent {
     static propTypes = {
         laserState: PropTypes.object,
-        controllerState: PropTypes.object,
+        // controllerState: PropTypes.object,
         onchangeFocusHeight: PropTypes.func,
         onchangeLaserPrecent: PropTypes.func,
         onchangeLaserState: PropTypes.func,
@@ -23,19 +23,26 @@ class Cnccom extends PureComponent {
     }
 
     render() {
-        const { laserState, controllerState } = this.props;
+        const { laserState } = this.props;
         const { onchangeLaserPrecent, onchangeFocusHeight, onchangeLaserState } = this.props;
         const { laserPercent, focusHeight, txtFocusX, txtFocusY, txtFocusZ, txtMovementX, txtMovementY, txtMovementZ, relativeMode } = laserState;
+        // const headPower = controllerState.headPower / 1000;
         return (
             <div>
                 <div>
                     <p>{i18n._('Laser')}</p>
                     <ul style={{ listStyle: 'none' }}>
                         <li>
-                            <p className={styles['title-row']}>current percent</p>
-                            <p className={styles['title-row']}>{controllerState.headPower}</p>
-                            <p className={styles['title-row']}>{controllerState.spindleSpeed}</p>
-
+                            <p className={styles['title-row']}>Current Power</p>
+                            <p className={styles['title-row']}>{laserPercent}%</p>
+                        </li>
+                        <li>
+                            <button className={styles['btn-func']} type="button" onClick={() => this.props.executeGcode(`M3 P${laserPercent}`)}>
+                                {i18n._('On')}
+                            </button>
+                            <button className={styles['btn-func']} type="button" onClick={() => this.props.executeGcode('M5')}>
+                                {i18n._('Off')}
+                            </button>
                         </li>
                         <li>
                             <NumberInput
@@ -44,7 +51,7 @@ class Cnccom extends PureComponent {
                                 onChange={onchangeLaserPrecent}
                             />
                             <button className={styles['btn-func']} type="button" onClick={() => this.props.executeGcode(`M3 P${laserPercent}`)}>
-                                Set Percent
+                                Set Power
                             </button>
                         </li>
 
@@ -55,10 +62,10 @@ class Cnccom extends PureComponent {
                                 onChange={onchangeFocusHeight}
                             />
                             <button className={styles['btn-func']} type="button" onClick={() => this.props.executeGcode('get laser focus')}>
-                                Get Focus High
+                                Get Focus Hight
                             </button>
                             <button className={styles['btn-func']} type="button" onClick={() => this.props.executeGcode('set laser focus', { focusHeight })}>
-                                Set Focus High
+                                Set Focus Hight
                             </button>
                         </li>
                         <li>
@@ -122,4 +129,4 @@ class Cnccom extends PureComponent {
     }
 }
 
-export default Cnccom;
+export default CNC;

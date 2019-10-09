@@ -2,18 +2,19 @@ import PropTypes from 'prop-types';
 import Select from 'react-select';
 import React, { PureComponent } from 'react';
 import isEmpty from 'lodash/isEmpty';
+import controller from '../../lib/controller';
 import i18n from '../../lib/i18n';
 import styles from './index.styl';
 import modal from '../../lib/modal';
-import Space from '../../components/Space';
+// import Space from '../../components/Space';
 
-class Calibration extends PureComponent {
+class Firmware extends PureComponent {
     static propTypes = {
         updateFile: PropTypes.string,
         updateProgress: PropTypes.number,
         updateCount: PropTypes.number,
         firmwareVersion: PropTypes.string,
-        moduleID: PropTypes.string,
+        moduleID: PropTypes.number,
         moduleVersion: PropTypes.string,
         onChangeUpdateFile: PropTypes.func,
         executeGcode: PropTypes.func
@@ -58,27 +59,21 @@ class Calibration extends PureComponent {
     state = {
         shouldShowUpdateWarning: false,
         shouldShowUpdateWarningTag: true,
-        originFileUpdateType: 'MasterControl'
+        originFileUpdateType: 'MainControl'
     };
 
     componentWillReceiveProps(nextProps) {
         // show warning when open CNC tab for the first time
         const { updateProgress, updateCount } = nextProps;
-        console.log(this.state.shouldShowUpdateWarning, updateProgress / updateCount);
-        if (this.state.shouldShowUpdateWarning && this.actions.shouldShowUpdateWarningTag && updateProgress / updateCount === 1) {
-            // if (updateProgress / updateCount === 1) {
+        if (this.state.shouldShowUpdateWarning && this.state.shouldShowUpdateWarningTag && updateCount > 0 && (updateProgress === updateCount)) {
             modal({
-                title: i18n._('Warning'),
+                title: i18n._('Update Finished'),
                 body: (
                     <div>
-                        更新成功
-                        <Space width={4} />
-                            更新固件后，协议自动跳转为文本协议，需要重新切换协议
-                        <Space width={4} />
-                        <br />
-                        更新固件后，协议自动跳转为文本协议，需要重新切换协议
+                        {i18n._('Well done! The firmware update is finished successfully, and the protocol and calibration data will be reset. Please perform calibration again since the default calibration values may not fit well. By default, M502 and M420 V will be executed in case the head may hit the heatbed.')}
                     </div>
-                ),
+                )
+                /*
                 footer: (
                     <div style={{ display: 'inline-block', marginRight: '8px' }}>
                         <input
@@ -86,10 +81,19 @@ class Calibration extends PureComponent {
                             defaultChecked={false}
                             onChange={this.actions.onChangeShouldShowWarningTag}
                         />
-                        <span style={{ paddingLeft: '4px' }}>下次更新不再显示</span>
+                        <span style={{ paddingLeft: '4px' }}>{i18n._('not show next time')}</span>
                     </div>
                 )
+                */
             });
+            console.log('update finished', updateProgress);
+            if (typeof this.props.executeGcode === 'function') {
+                setTimeout(() => {
+                    controller.command('force switch');
+                    this.props.executeGcode('M502');
+                    this.props.executeGcode('M420 V');
+                }, 8000);
+            }
             this.setState({
                 shouldShowUpdateWarning: false
             });
@@ -104,36 +108,24 @@ class Calibration extends PureComponent {
         return (
             <div>
                 <p style={{ margin: '0' }}>{i18n._('Update Firmware')}</p>
-                <table style={{ width: '100%', marginTop: '10px' }}>
+                <table style={{ width: '60%', marginTop: '10px' }}>
                     <tbody>
                         <tr>
                             <td style={{ paddingLeft: '0px', width: '60%' }}>
+                                <p style={{ margin: '0' }}>{i18n._('Pack Type for Raw Update')}:</p>
                                 <Select
                                     clearable={false}
                                     options={[{
-                                        value: 'MasterControl',
-                                        label: '主控'
+                                        value: 'MainControl',
+                                        label: 'MainControl'
                                     }, {
                                         value: 'Module',
-                                        label: '模块'
+                                        label: 'Module'
                                     }]}
                                     value={state.originFileUpdateType}
                                     searchable={false}
                                     onChange={this.actions.onChangeUpdateType}
                                 />
-                            </td>
-                            <td style={{ paddingRight: '0px', width: '40%' }}>
-                                <button
-                                    type="button"
-                                    className="sm-btn-large sm-btn-default"
-                                    style={{ width: '100%' }}
-                                    disabled={!hasUpdateFile}
-                                    onClick={() => {
-                                        this.actions.updateOriginFile('start update origin file', { originFileUpdateType });
-                                    }}
-                                >
-                                    Update Origin File
-                                </button>
                             </td>
                         </tr>
                     </tbody>
@@ -153,7 +145,7 @@ class Calibration extends PureComponent {
                         this.actions.clickUploadUpdateFile();
                     }}
                 >
-                    {i18n._('Open')}
+                    {i18n._('Upload')}
                 </button>
                 <button
                     className={styles['btn-func']}
@@ -161,7 +153,17 @@ class Calibration extends PureComponent {
                     disabled={!hasUpdateFile}
                     onClick={() => this.actions.updatePacketFile('start update')}
                 >
-                    {i18n._('Update')}
+                    {i18n._('PackUpdate')}
+                </button>
+                <button
+                    className={styles['btn-func']}
+                    type="button"
+                    disabled={!hasUpdateFile}
+                    onClick={() => {
+                        this.actions.updateOriginFile('start update origin file', { originFileUpdateType });
+                    }}
+                >
+                    {i18n._('Raw Update')}
                 </button>
                 <button
                     className={styles['btn-func']}
@@ -185,4 +187,4 @@ class Calibration extends PureComponent {
     }
 }
 
-export default Calibration;
+export default Firmware;

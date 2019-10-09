@@ -15,7 +15,7 @@ import controller from '../../lib/controller';
 import Calibration from './Calibration';
 import GcodeFile from './GcodeFile';
 import Setting from './Setting';
-import Cnc from './Cnc';
+import CNC from './CNC';
 import Laser from './Laser';
 import Firmware from './Firmware';
 import HeaterControl from './HeaterControl';
@@ -26,10 +26,7 @@ import styles from './index.styl';
 import {
     MAX_LINE_POINTS,
     TEMPERATURE_MIN,
-    TEMPERATURE_MAX,
-    WORKFLOW_STATE_IDLE,
-    WORKFLOW_STATE_PAUSED,
-    WORKFLOW_STATE_RUNNING
+    TEMPERATURE_MAX
 } from './constants';
 
 const normalizeToRange = (n, min, max) => {
@@ -54,7 +51,7 @@ class DeveloperPanel extends PureComponent {
     history = new History(1000);
 
     state = {
-        statusError: true,
+        statusError: false,
         defaultWidgets: store.get('developerPanel.defaultWidgets'),
         renderStamp: +new Date(),
         machineSetting: {
@@ -77,7 +74,6 @@ class DeveloperPanel extends PureComponent {
         bedTargetTemperature: 50,
         calibrationZOffset: 0.1,
         calibrationMargin: 0,
-        gcodeFile: '',
         updateFile: '',
         targetString: '',
         rpm: 0,
@@ -92,45 +88,12 @@ class DeveloperPanel extends PureComponent {
             txtMovementY: 10,
             txtMovementZ: 30
         },
-        workflowState: '',
-        workPosition: {
-            x: '0.000',
-            y: '0.000',
-            z: '0.000',
-            e: '0.000'
-        },
         pressEnter: false,
-        sender: {
-            total: 0,
-            sent: 0,
-            received: 0
-        },
-        controller: {}
+        // controller: {}
+        controller: { state: {} }
     };
 
     actions = {
-        onChangeGcodeFile: async (event) => {
-            const file = event.target.files[0];
-            try {
-                await this.actions.uploadGcodeFile(file);
-            } catch (e) {
-                modal({
-                    title: i18n._('Failed to upload file'),
-                    body: e.message
-                });
-            }
-        },
-        uploadGcodeFile: async (file) => {
-            const formData = new FormData();
-            const { port } = this.props;
-            formData.append('file', file);
-            formData.append('port', port);
-            const res = await api.uploadGcodeFile(formData);
-            const { originalName } = res.body;
-            this.setState({
-                gcodeFile: originalName
-            });
-        },
         onChangeUpdateFile: async (event) => {
             const file = event.target.files[0];
             try {
@@ -246,28 +209,6 @@ class DeveloperPanel extends PureComponent {
             });
             this.actions.render();
         },
-        updateWorkPositionToZero: () => {
-            this.actions.updateWorkPosition({
-                x: '0.000',
-                y: '0.000',
-                z: '0.000',
-                e: '0.000'
-            });
-        },
-        updateWorkPosition: (pos) => {
-            this.setState({
-                workPosition: {
-                    ...this.state.workPosition,
-                    ...pos
-                }
-            });
-            let { x = 0, y = 0, z = 0 } = { ...pos };
-            x = (Number(x) || 0);
-            y = (Number(y) || 0);
-            z = (Number(z) || 0);
-            this.toolhead && this.toolhead.position.set(x, y, z);
-            this.targetPoint && this.targetPoint.position.set(x, y, z);
-        },
         setTerminalInput: (event) => {
             // Enter
             if (event.keyCode === 13) {
@@ -347,12 +288,12 @@ class DeveloperPanel extends PureComponent {
                 controller: {
                     ...this.state.controller,
                     state: state
+                },
+                laserState: {
+                    ...this.state.laserState,
+                    laserPercent: state.headPower / 1000
                 }
             });
-            const { pos } = { ...state };
-            if (this.state.workflowState === WORKFLOW_STATE_RUNNING) {
-                this.actions.updateWorkPosition(pos);
-            }
         },
         'machine:settings': (state) => {
             if (state) {
@@ -394,36 +335,8 @@ class DeveloperPanel extends PureComponent {
                 this.textarea.value += `${data}\n`;
             }
             const { length } = this.textarea.value;
-            // if (length > 32768) {
             if (length > 16384) {
                 this.textarea.value = '';
-            }
-        },
-        'sender:status': (data) => {
-            const { total, sent, received } = data;
-            this.setState({
-                sender: {
-                    ...this.state.sender,
-                    total,
-                    sent,
-                    received
-                }
-            });
-        },
-        'workflow:state': (workflowState) => {
-            if (this.state.workflowState !== workflowState) {
-                this.setState({ workflowState });
-                switch (workflowState) {
-                    case WORKFLOW_STATE_IDLE:
-                        this.actions.updateWorkPositionToZero();
-                        break;
-                    case WORKFLOW_STATE_RUNNING:
-                        break;
-                    case WORKFLOW_STATE_PAUSED:
-                        break;
-                    default:
-                        break;
-                }
             }
         },
         'transfer:hex': (data) => {
@@ -524,56 +437,47 @@ class DeveloperPanel extends PureComponent {
     }
 
     render() {
-        // const { laserPercent, focusHeight } = this.state.laserState;
         const { defaultWidgets, renderStamp, machineSetting, rpm, statusError,
-            workPosition, workflowState, sender, calibrationZOffset, calibrationMargin, extrudeLength, extrudeSpeed,
-            gcodeFile, updateFile, bedTargetTemperature, nozzleTargetTemperature } = this.state;
+            calibrationZOffset, calibrationMargin, extrudeLength, extrudeSpeed,
+            updateFile, bedTargetTemperature, nozzleTargetTemperature } = this.state;
         const controllerState = this.state.controller.state || {};
-        const { updateProgress = 0, updateCount = 0, firmwareVersion = '', moduleID = '', moduleVersion = '',
-            hexModeEnabled, newProtocolEnabled, temperature, headType, headStatus, headPower } = controllerState;
-        // const { updateProgress = 0, updateCount = 0, firmwareVersion = '', temperature, headType, headStatus, headPower } = controllerState;
+        const { updateProgress = 0, updateCount = 0, firmwareVersion = '', moduleID = 0, moduleVersion = '',
+            hexModeEnabled, newProtocolEnabled, temperature } = controllerState;
         const canClick = !!this.props.port;
-        // const newProtocolEnabled = true;
-        // const canClick = true;
         return (
             <div>
                 <div className={styles['developer-panel']}>
                     <div style={{ paddingBottom: '10px' }}>
-                        <p style={{ margin: '0 18px 0 0' }}>{i18n._('Switch Protocol')}</p>
-                        <div
-                            style={{ height: '100px', width: '100px', backgroundColor: 'red', display: 'inline-block', verticalAlign: 'middle' }}
-                        />
-                        <div style={{ display: 'inline-block', verticalAlign: 'middle', paddingLeft: '10px' }}>
-                            <div className="btn-group btn-group-sm">
-                                PC button
-                                {!newProtocolEnabled && (
-                                    <button
-                                        type="button"
-                                        className="sm-btn-small sm-btn-primary"
-                                        disabled={!canClick}
-                                        onClick={this.actions.switchOn}
-                                    >
-                                        <span className="space" />
-                                        {i18n._('Text')}
-                                        <span className="space" />
-                                    </button>
-                                )}
-                                {newProtocolEnabled && (
-                                    <button
-                                        type="button"
-                                        className="sm-btn-small sm-btn-danger"
-                                        disabled={!canClick}
-                                        onClick={this.actions.switchOff}
-                                    >
-                                        {i18n._('Screen')}
-                                    </button>
-                                )}
-                            </div>
+                        <div style={{ margin: '10px 0' }}>
+                            <span style={{ margin: '0 10px' }}>{i18n._('Protocol Type')}:</span>
+                            {!newProtocolEnabled && (
+                                <button
+                                    type="button"
+                                    className="sm-btn-small sm-btn-primary"
+                                    disabled="true"
+                                    onClick={this.actions.switchOn}
+                                >
+                                    <span className="space" />
+                                    {i18n._('Text')}
+                                    <span className="space" />
+                                </button>
+                            )}
+                            {newProtocolEnabled && (
+                                <button
+                                    type="button"
+                                    className="sm-btn-small sm-btn-danger"
+                                    disabled="true"
+                                    onClick={this.actions.switchOff}
+                                >
+                                    {i18n._('Screen')}
+                                </button>
+                            )}
+                        </div>
+                        <div>
                             <div
                                 className="btn-group btn-group-sm"
                                 style={{ padding: '0 10px' }}
                             >
-                                Mock button
                                 <button
                                     type="button"
                                     className="sm-btn-small sm-btn-danger"
@@ -583,23 +487,26 @@ class DeveloperPanel extends PureComponent {
                                     {i18n._('Switch')}
                                 </button>
                             </div>
-                            <div>
-                                每1s检查一次连接状态
+                            <div
+                                className="btn-group btn-group-sm"
+                                style={{ padding: '0 18px' }}
+                            >
+                                <button
+                                    className="sm-btn-small sm-btn-primary"
+                                    type="button"
+                                    onClick={this.actions.clearFeeder}
+                                >
+                                    <span className="space" />
+                                    {i18n._('Flush')}
+                                </button>
                             </div>
                             {statusError && (
                                 <div sytle={{ color: 'red', fontSize: '15px' }}>
-                                    err: your port is occupied
+                                    err: the port is occupied
                                 </div>
                             )}
-                        </div>
-                        <div>
-                            <button
-                                className={styles['btn-calc']}
-                                type="button"
-                                onClick={this.actions.clearFeeder}
-                            >
-                                flushBuffer
-                            </button>
+                            <p style={{ margin: '0 10px' }}>{i18n._('Switch to the screen protocol if connected')}</p>
+                            <p style={{ margin: '0 10px' }}>{i18n._('Flush previous commands if not moving on')}</p>
                         </div>
                     </div>
                     <PrimaryWidgets
@@ -645,7 +552,7 @@ class DeveloperPanel extends PureComponent {
                             />
                             <div
                                 ref={this.monitor}
-                                style={{ width: '586px', height: '586px', position: 'relative', top: '0', bottom: '0', left: '0', right: '0' }}
+                                style={{ width: '100%', height: '600px', position: 'relative', top: '0', bottom: '0', left: '0', right: '0' }}
                             />
                         </Tab>
                         <Tab
@@ -654,7 +561,7 @@ class DeveloperPanel extends PureComponent {
                         >
                             <p>{i18n._('Message Filter')}</p>
                             <input
-                                style={{ width: '586px', backgroundColor: '#ffffff', color: '#000000' }}
+                                style={{ width: '100%', backgroundColor: '#ffffff', color: '#000000' }}
                                 type="text"
                                 placeholder="Key Word"
                                 onChange={(event) => {
@@ -663,7 +570,7 @@ class DeveloperPanel extends PureComponent {
                                 }}
                             />
                             <TextArea
-                                style={{ width: '586px' }}
+                                style={{ width: '100%' }}
                                 minRows={28}
                                 maxRows={28}
                                 placeholder="Message"
@@ -707,15 +614,8 @@ class DeveloperPanel extends PureComponent {
                             title={i18n._('G-Code')}
                         >
                             <GcodeFile
-                                sender={sender}
                                 size={this.props.size}
-                                gcodeFile={gcodeFile}
-                                headType={headType}
-                                workflowState={workflowState}
-                                workPosition={workPosition}
-                                headStatus={headStatus}
-                                headPower={headPower}
-                                onChangeGcodeFile={this.actions.onChangeGcodeFile}
+                                port={this.props.port}
                                 executeGcode={this.props.executeGcode}
                             />
                         </Tab>
@@ -748,9 +648,9 @@ class DeveloperPanel extends PureComponent {
                         </Tab>
                         <Tab
                             eventKey="cnc"
-                            title={i18n._('Cnc')}
+                            title={i18n._('CNC')}
                         >
-                            <Cnc
+                            <CNC
                                 rpm={rpm}
                                 executeGcode={this.props.executeGcode}
                                 onchangeCncRpm={this.actions.onchangeCncRpm}
